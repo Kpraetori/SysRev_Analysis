@@ -1,0 +1,6 @@
+"0","# save missing year file"
+"0","write_csv(yearmia, path = ""RayyanExport06022023/manually_corrected/data_needs_year.csv"")"
+"0","# save missing keywords"
+"0","write_csv(keymia, path = ""RayyanExport06022023/manually_corrected/data_needs_keywords.csv"")"
+"0","# save missing addresses"
+"0","write_csv(addressmia, path = ""RayyanExport06022023/manually_corrected/data_needs_address.csv"")"

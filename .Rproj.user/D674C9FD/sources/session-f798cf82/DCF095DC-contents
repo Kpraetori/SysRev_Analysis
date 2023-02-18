@@ -1,0 +1,441 @@
+---
+title: "AbstractAnalysis"
+author: "Kelsey Bezaire"
+date: "2023-02-06"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Systematic Review Analysis
+## Purpose
+
+This code is intended to clean, prepare, and analyse systematic review data from the abstract and title screening stage. These steps may be broken up into separate files within the project for clarity.
+
+## Data Analysis
+From the published methods section:
+Descriptive statistics of articles screened at the title and abstract level was used to identify gross trends in the literature and to explore methodology. Descriptive statistics included:
+X publication trend of number of papers by date and by journal, 
+X number of papers by first author location, if listed. 
+! TODO: update country output as the shorthand is confusing
+
+Text mining was used to pull relevant words from abstracts to explore:
+- frequency of word, 
+- word frequency by year, 
+- with correlation tests 
+Sentiment analysis was used to 
+- separate words into sentiments, such as words preceded by 'not' belonging to negative sentiments, and 
+- word count by sentiment. 
+Analysis included 
+- visualising a network of words used together and a correlation of words including 
+- a visualisation of correlations within word clusters. 
+
+Text mining was conducted using tidytext package in R \citep{Silge2016}. From the list of relevant words, methodology-based words were isolated and counted for frequency. For example, words like behaviour observation, preference test, cortisol, oxytocin, and other such measures pertaining to affect or welfare.
+
+The top 3 most-frequently mentioned method will be used as the selection criterion for full-text screening and appraisal, to not exceed 20\% (n=62) of all considered papers.
+
+### Quick tips
+Cmd + Option + I for a new chunk.
+
+## Load Packages
+```{r}
+install.packages("countrycode")
+```
+
+```{r}
+library(tidyverse)
+library(Hmisc)
+library(dplyr)
+library(ggplot2)
+library(ggridges) # for ridgeplot
+library(viridis)
+library(countrycode)
+```
+
+##Load file
+
+```{r}
+rawdata <- read_csv("RayyanExport06022023/articles.csv")
+
+```
+```{r}
+spec(rawdata)
+```
+
+```{r}
+rawcustom <- read_csv("RayyanExport06022023/customizations_log.csv")
+spec(rawcustom)
+```
+
+```{r}
+rawdata
+```
+
+```{r}
+rawcustom
+```
+
+So it looks like the customisation log contains every change to every article made. This can be helpful to use as a way to find what articles were included, but from looking at the rawdata, the inclusion decisions are listed in the notes section. However, the notes section contains a lot of other information. I don't want to list every detail out in its own column to tidy this; I just want to select those that have been included. 
+
+**Solution**
+So I'll filter for strings containing RAYYAN-INCLUSION: {"Kelsey"=>"Included" or pass new rule (does that apply to all included though?)
+
+Not sure how to do this withe parenthesis and brackets involved. Maybe I can start by filtering for just 'included' and if that doesn't work, I can try to escape the special characters with \ as in \"Hello\"
+
+You know what, let's try to separate them first so it's easier to deal with.
+
+```{r}
+# doesn't work like I want it to
+rawdata %>% 
+  separate(notes, into = c("misc", "rating", "exclusion"), sep = "|", convert=TRUE)
+```
+Let's try plan B for a moment and get back to that if we have to.
+
+For the below, I first tried 'pass new rule' and only got 43 rows. Then I realised pass new rule was a label I made when testing something out (a new more strict criterion that we didn't include). When I filtered for 'Included', the number matches the number included in our study. Woo!
+```{r}
+rawdata %>%
+  filter(str_detect(notes, "Included"))
+```
+
+Let's assign that as a new variable now called included.
+
+```{r}
+included <- rawdata %>%
+  filter(str_detect(notes, "Included"))
+```
+
+
+Before doing anything more, let's look to see if there are important missing values.
+```{r}
+Hmisc::describe(included)
+```
+
+It looks like location is missing for a lot of papers, so that's going to need fixing before we can look at location data. The year is missing for one paper. We should isolate that and find out what year it is before moving on. All the papers have titles and abstracts and journals, and only 3 are missing keywords. This is good. Some are missing DOI and URL. This is something to note when I try to pull full articles later.
+
+Let's first isolate the paper that is missing the year and take care of that right now.
+
+```{r}
+yearmia <- included %>%
+  filter(is.na(year))
+yearmia
+```
+I found the paper! It was published in 2021. I don't have a precedent for this. I'll discuss with my coauthors and put it in the amendment document. I think that articles with missing information important for analysis will have the information manually added directly from the published article. If the paper with the missing data can't be located, only then will it be dropped from analysis. I've noted this decision change in amendment no. 11.
+
+Now to find the papers missing keywords. (I don't have specific keyword analysis but I might need this for hte word relationship bit. Better to have complete data than missing data.)
+```{r}
+# missing keywords
+keymia <- included %>%
+  filter(is.na(keywords))
+keymia
+
+# missing addresses
+addressmia <- included %>%
+  filter(is.na(location))
+addressmia
+```
+
+I'll save them all in a subfolder called manually_corrected. Then we'll put revisions into these documents, save with corrected name, then recombine the files together. That way we're not changing the raw download file.
+Files will be saved as 'data needs X' and once the corrections are in will be saved as 'data has X'.
+
+```{r}
+# save missing year file
+write_csv(yearmia, path = "RayyanExport06022023/manually_corrected/data_needs_year.csv")
+# save missing keywords
+write_csv(keymia, path = "RayyanExport06022023/manually_corrected/data_needs_keywords.csv")
+# save missing addresses
+write_csv(addressmia, path = "RayyanExport06022023/manually_corrected/data_needs_address.csv")
+```
+
+NOTE: looking over the data that has a location, there are multiple countries listed, so I'll need to clean up that data before I can do location analysis on the first author location. I think if I slice up the string to only include everything before a . or ; or if neither are in a location cell, include the whole string. The . should catch most of it as I've noticed they syntax seems to be a stop after listing the country and before listing the next author's information.
+
+It's really messy as sometimes names and emails and telephone numbers are listed all in the same cell with the location. I'll probably have to just isolate by country?
+
+So let's load the files with corrected data and merge them. With the addresses, I opened them in Excel to make pasting data easier, but it changed the formatting on some content, so I deleted everything but the key and location columns. I did the same with the other files just in case opening the CSV in numbers changed any formatting. 
+
+```{r}
+# Load missing year file
+withyear <- read_csv("RayyanExport06022023/manually_corrected/data_has_year.csv")
+# Load missing keyword file
+withkeyword <- read_csv("RayyanExport06022023/manually_corrected/data_has_keyword.csv")
+# Load missing location file
+withaddress <- read_csv("RayyanExport06022023/manually_corrected/data_has_address.csv")
+```
+To check that the merge is correct, let's see how many lines each dataset has. When we merge we'll want the length to be the same
+
+```{r}
+dim(included)
+dim(withaddress)
+dim(withkeyword)
+dim(withyear)
+```
+
+
+I had some difficulty recombining the data based on key. I tried merge and group_by and left_join and bind_rows. In the end it is easier to combine the data by key, which means no new rows but creates new columns (it changes the column names to end in .x and .y), and then combine the data from both columns to a new column, and finally remove the old columns that had NAs. It is not the best, but it works and is easy to read.
+
+```{r}
+# use full join to combine data matching the keyword
+testjoin1 <- full_join(included, withkeyword, by="key")
+testjoin2 <- full_join(testjoin1, withaddress, by="key")
+completedata <- full_join(testjoin2, withyear, by="key")
+
+# create new columns that combine the data from the data.x and data.y columns that were created by doing the full_join
+completedata$keywords <- coalesce(completedata$keywords.x, completedata$keywords.y)
+completedata$year <- coalesce(completedata$year.x, completedata$year.y)
+completedata$location <- coalesce(completedata$location.x, completedata$location.y)
+
+# Now to remove the unnecessary data.x and data.y columns
+tidierincluded <- completedata %>% select(-c(keywords.x, keywords.y, location.x, location.y, year.x, year.y))
+
+# take a look
+summary(tidierincluded)
+```
+
+Let's look at the year data.
+```{r echo=FALSE}
+ggplot(tidierincluded, aes(year)) + 
+  geom_histogram(bins=20,color = "burlywood4", fill = "darkslategray") +
+  geom_vline(aes(xintercept = median(year)), color = "thistle4", size = 1) +
+  geom_vline(aes(xintercept = median(year) + sd(year)), color = "thistle3", size = 0.5) +
+  geom_vline(aes(xintercept = median(year) - sd(year)), color = "thistle3", size = 0.5) +
+  scale_x_continuous(breaks=seq(1960,2022,5)) +
+  labs(
+    title = "Histogram of Article Publication by Year",
+    subtitle = "From ND to May 2022",
+    caption = "Data of articles included after title and abstract screening. Vertical lines depict the median and standard deviation.",
+    x = "Year of article publication",
+    y = "Count of articles published"
+  ) +
+  theme_classic()
+```
+Now to look at the number of articles by journal.
+I tried a density ridgeline and it looks bad. Tried a binned one and it looks better but still bad. Too many journals!
+
+So some of the journals are not grouping well because of punctuation and case sensitivity. I've got over 90 articles but some are clearly the same like plos ONE and plos one. Let's tidy these up and try again. I'm down to 82 but there are still some of the same journals with different ways of presenting the name.
+
+So the title content changes will be:
+- wiener tierärztliche monatsschrift without the umlaut.
+- journal of applied animal welfare science jaaws without the jaaws
+- journal of the american veterinary medical association without the javma
+- animals with just the short title
+- anthrozoos as one word
+
+With this change we now have 78 unique journals tht we can now analyse
+
+```{r}
+# Journal titles to lowercase
+tidierincluded$journal <- tolower(tidierincluded$journal)
+
+# remove punctuation
+tidierincluded$journal <- gsub("[[:punct:][:blank:]]+", " ", tidierincluded$journal)
+
+# Replace incidence of unwanted journal title with wanted journal title.
+
+# detect unwanted journal name strings and replace them with wanted names
+tidier2 <- tidierincluded %>%
+  mutate(journal = case_when(
+    str_detect(journal, "wiener tierärztliche monatsschrift") ~ "wiener tierarztliche monatsschrift",
+    str_detect(journal, "applied animal welfare science jaaws")  ~ "applied animal welfare science",
+      str_detect(journal, "javma journal of the american veterinary medical association")  ~ "journal of the american veterinary medical association",
+    str_detect(journal, "animals an open access journal from mdpi")  ~ "animals",
+    str_detect(journal, "anthrozoo s")  ~ "anthrozoos",
+    TRUE ~ journal
+    )
+  )
+
+
+# view the data
+tidier2 %>%
+  count(journal, sort=TRUE) %>%
+  arrange(desc(journal))
+
+```
+
+Let's make a count of articles and see what percent of the total number if papers we have. 
+
+```{r}
+# make a new dataframe made of journals and counts by journal
+mostpublished <- tidier2 %>%
+  count(journal, sort=TRUE) %>%
+  arrange(desc(journal))
+
+# now add a column that is ia percentage of 312 so we can see what percent of our data is from which journal
+mostpublished <- mostpublished %>% 
+  group_by(journal) %>% 
+  mutate(Percentage=paste0(round(n/312*100,2),"%"))
+
+```
+
+The top 5 out of 78 journals cover 148 (47.44%) articles, thus containing less than half the dataset. Only two journals contained more than 10% (>31 articles) of the data. The first dog-specific journal contained 7 (2.24%) articles and the first welfare-specific journal contained 5 (1.6%) of articles. All articles with >1% of the data were English / non-translated Journals.
+
+Let's view on a histogram. 
+```{r echo=FALSE}
+ggplot(tidier2, aes(journal)) + 
+  geom_bar(color = "burlywood4", fill = "darkslategray") +
+  theme(axis.text.y = element_text(size = 8)) +
+  geom_text(stat='count', aes(label=..count..), vjust=-1) +
+  labs(
+    title = "Barplot of Article Publication by Journal",
+    subtitle = "From ND to May 2022",
+    caption = "Data of articles included after title and abstract screening.",
+    x = "Journal publisher",
+    y = "Count of articles published"
+  ) +
+  coord_flip() +
+  theme_classic()
+```
+
+
+
+I've made these and I'll get back to them once I clean my data
+
+```{r}
+ggplot(tidier2, aes(x = year, y = journal, fill=journal)) +
+  geom_density_ridges(stat="binline", bins=25, scale=0.8) +
+  theme_ridges()+ 
+  theme(legend.position = "none", axis.text.y = element_text(size = 8)) +
+  scale_x_continuous(limits=c(1965, 2025), breaks=seq(1965,2025,5)) +
+  labs(
+    title = "Ridgeline histogram plot of Journal Publication over Time",
+    subtitle = "From ND to May 2022",
+    caption = "Data of articles included after title and abstract screening. Plots are colored by journal.",
+    x = "Year of Publication",
+    y = "Title of Journal"
+  )
+```
+
+From the histograms, it looks like there's a boom around 2000. Let's focus on these years.
+
+```{r}
+ggplot(tidier2, aes(x = year, y = journal, fill=journal)) +
+  geom_density_ridges(stat="binline", bins=25, scale=0.8) +
+  theme_ridges()+ 
+  theme(legend.position = "none", axis.text.y = element_text(size = 8)) +
+  scale_x_continuous(limits=c(2000, 2025), breaks=seq(2000,2025,5)) +
+  labs(
+    title = "Ridgeline histogram plot of Journal Publication over Time",
+    subtitle = "From 2000 to May 2022",
+    caption = "Data of articles included after title and abstract screening and coloured by journal. 17 journals contained publications prior to 2000 and not shown in this visualisation. Journals with no line only published articles prior to 2000.",
+    x = "Year of Publication",
+    y = "Title of Journal"
+  )
+```
+
+Now that we've got some idea of what we're looking at, let's look at publications by country and date. To do this we must parse out the countries from the strings. We'll use countrycode to do this.
+
+We need the code to read through the string, pull out complete countries and make them as a list, then to select the first country to correspond to the first author. 
+
+That said, a few things needed cleaning first. That includes removing punctuation, putting to lowercase, and correcting the NAs that appeared when first running the data.
+
+
+
+```{r}
+library(tidyr)
+library(dplyr)
+#install.packages("countrycode")
+library(countrycode)
+all_country <- countryname_dict %>% 
+  # filter out non-ASCII country names:
+  filter(grepl('[A-Za-z]', country.name.alt)) %>%
+  # define column `country.name.alt` as an atomic vector:
+  pull(country.name.alt) %>% 
+  # change to lower-case:
+  tolower()
+
+# define alternation pattern of all country names:
+library(stringr)
+pattern <- str_c(all_country, collapse = '|')  # A huge alternation pattern!
+
+df %>%
+  # extract country name matches
+  mutate(country = str_extract_all(tolower(text), pattern)) %>%
+  unnest(country, keep_empty = TRUE)
+
+```
+```{r}
+
+#make sure this is running
+library(tidyverse)
+
+#add a function
+all_country <- countrycode::countryname_dict %>%  # remember the :: specifies the function specific to that package
+                  filter(grepl('[A-Za-z]', country.name.en)) %>% # filter out non-ASCII country names:
+                  pull(country.name.en) %>%  # define column `country.name.alt` as an atomic vector
+                  tolower()
+pattern <- str_c(all_country, collapse = '|')
+
+
+# lets make a new dataset to work with
+locationdata <- tidier2
+
+# remove punctuation
+locationdata$location = gsub("[[:punct:]\n]","", locationdata$location)
+
+
+# some rows were not recognised and so were replaced. Still some weren't recognised and so are manually changed here.
+locationdata <- locationdata %>%
+  mutate(location = case_when(
+    str_detect(location, "USA") ~ "united states",
+    str_detect(location, "UK")  ~ "united kingdom",
+    str_detect(location, "korea")  ~ "republic of korea",
+#    str_detect(location, "Kuhne Franziska Veterinary Department Institute of Animal Welfare and Behaviour FU Berlin Berlin")  ~ "Germany",
+#    str_detect(location, "Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205")  #~ "united states",
+#    str_detect(location, "College of Veterinary Medicine Seoul National University 1 Gwanakro Gwanakgu Seoul 151742 Korea") ~ "republic of korea",
+#    str_detect(location, "Animal Technology College of Applied Life Science Jeju National University 102 Jejudaehakro Jejusi 63243 Korea Republic") ~ "republic of #korea",
+    TRUE ~ location
+    )
+  )
+#
+#
+# now we make a new table that is expanded so that every country found in the string has its own row, such that two authors = two rows
+locationtwo <- locationdata %>%
+  mutate(country = str_extract_all(tolower(locationdata$location), pattern)) %>%
+  # select(-location) %>%
+  unnest(country, keep_empty = TRUE)
+
+```
+
+
+Now to get only the first author's location.
+  
+```{r}
+falocationdata <-
+locationtwo %>% 
+  group_by(key) %>% 
+  filter(row_number()==1)
+```
+  
+  
+  Finally And let's look at it from another view. We see that the country names are terrible and not grouped correctly. England should group into UK.
+  
+```{r}
+ggplot(falocationdata, aes(country)) + 
+  geom_bar(color = "darkslategray", fill = "thistle4") +
+  geom_text(stat='count', aes(label=..count..), vjust=-1) +
+  labs(
+    title = "Barplot of Article Publication by First Author Country",
+    subtitle = "From ND to May 2022",
+    caption = "Data of articles included after title and abstract screening.",
+    x = "Country of First Author Affiliation or Correspondance",
+    y = "Count of articles published"
+  ) +
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+Now to look at country and journal publication both. So look at breakdown of publication within country.
+```{r}
+agglocation <- falocationdata %>% group_by(country, journal) %>%
+  count(journal, sort=TRUE)
+  
+```
+
+```{r}
+ggplot(agglocation, aes(fill=journal, y=n, x=country)) + 
+    geom_bar(position="stack", stat="identity") +
+    theme_classic() + 
+    theme(legend.position="bottom", axis.text.x = element_text(angle = 45, hjust=1))
+```
+
