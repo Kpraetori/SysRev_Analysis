@@ -379,11 +379,14 @@ locationdata <- locationdata %>%
   mutate(location = case_when(
     str_detect(location, "USA") ~ "united states",
     str_detect(location, "UK")  ~ "united kingdom",
-    str_detect(location, "korea")  ~ "republic of korea",
-#    str_detect(location, "Kuhne Franziska Veterinary Department Institute of Animal Welfare and Behaviour FU Berlin Berlin")  ~ "Germany",
-#    str_detect(location, "Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205")  #~ "united states",
+    str_detect(location, "England")  ~ "united kingdom",
+    str_detect(location, "korea")  ~ "south korea",
+    str_detect(location, "Berlin")  ~ "Germany",
+    str_detect(location, "Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205") ~ "united states",
 #    str_detect(location, "College of Veterinary Medicine Seoul National University 1 Gwanakro Gwanakgu Seoul 151742 Korea") ~ "republic of korea",
-#    str_detect(location, "Animal Technology College of Applied Life Science Jeju National University 102 Jejudaehakro Jejusi 63243 Korea Republic") ~ "republic of #korea",
+#    str_detect(location, "Animal Technology College of Applied Life Science Jeju National University 102 Jejudaehakro Jejusi 63243 Korea Republic") ~ # "republic of korea",
+#  str_detect(location, "Institute of Animal Medicine College of Veterinary Medicine Gyeongsang National University Republic of Korea
+#") ~ "republic of korea",
     TRUE ~ location
     )
   )
@@ -397,6 +400,8 @@ locationtwo <- locationdata %>%
 
 ```
 
+Alright so there is something wrong with string detect as it doesn't like replacing korea. I will sort this later.
+Also I need to check that all the replacements are accurate to first author location. I'll manually compare the columns before and after the changes.
 
 Now to get only the first author's location.
   
