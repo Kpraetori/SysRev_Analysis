@@ -374,6 +374,7 @@ locationdata <- tidier2
 locationdata$location = gsub("[[:punct:]\n]","", locationdata$location)
 
 
+#### IMPORTANT: Check that this replaces the first author country, not any author country!!! ###
 # some rows were not recognised and so were replaced. Still some weren't recognised and so are manually changed here.
 locationdata <- locationdata %>%
   mutate(location = case_when(
