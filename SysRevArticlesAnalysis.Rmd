@@ -369,36 +369,51 @@ pattern <- str_c(all_country, collapse = '|')
 
 # lets make a new dataset to work with
 locationdata <- tidier2
+locationdata$locations = locationdata$location
 
 # remove punctuation
-locationdata$location = gsub("[[:punct:]\n]","", locationdata$location)
+# locationdata$location = gsub("[[:punct:]\n]","", locationdata$location)
 
+locationdata$locations %<>%
+  gsub("[[:punct:]\n]","", .) %>%
+  gsub("USA", "United States", .) %>%
+  gsub("UK", "United Kingdom", .) %>%  
+  gsub("England", "United Kingdom", .) %>%
+  gsub("Korea", "South Korea", .) %>%
+  gsub("Parma", "Italy", .) %>%
+  gsub("New Brunswick NJ", "United States", .) %>%
+  gsub("Saint Kitts and Nevis", "Saint Kitts and Nevis", .) %>%
+  gsub("Berlin", "Germany", .)
 
-#### IMPORTANT: Check that this replaces the first author country, not any author country!!! ###
 # some rows were not recognised and so were replaced. Still some weren't recognised and so are manually changed here.
-locationdata <- locationdata %>%
-  mutate(location = case_when(
-    str_detect(location, "USA") ~ "united states",
-    str_detect(location, "UK")  ~ "united kingdom",
-    str_detect(location, "England")  ~ "united kingdom",
-    str_detect(location, "korea")  ~ "south korea",
-    str_detect(location, "Berlin")  ~ "Germany",
-    str_detect(location, "Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205") ~ "united states",
+#locationdata <- locationdata %>%
+#  mutate(locations = case_when(
+#    str_detect(locations, "Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205") ~ " Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205 United States",
+#      str_detect(locations, "Ross University School of veterinary Medicine Basseterre St Kitts Saint Kitts and Nevis     Adtalem Global Education Downers Grove Illinois United Kingdom     Center for Teaching and Learning Ross University School of Medicine Roseau Commonwealth of Dominica Dominica") ~ "Saint Kitts and Nevis St Kitts and Nevis KNA KN",
 #    str_detect(location, "College of Veterinary Medicine Seoul National University 1 Gwanakro Gwanakgu Seoul 151742 Korea") ~ "republic of korea",
 #    str_detect(location, "Animal Technology College of Applied Life Science Jeju National University 102 Jejudaehakro Jejusi 63243 Korea Republic") ~ # "republic of korea",
 #  str_detect(location, "Institute of Animal Medicine College of Veterinary Medicine Gyeongsang National University Republic of Korea
 #") ~ "republic of korea",
-    TRUE ~ location
-    )
-  )
+#    TRUE ~ locations
+#    )
+#  )
 #
 #
+
+
+```
+
+```{r}
 # now we make a new table that is expanded so that every country found in the string has its own row, such that two authors = two rows
 locationtwo <- locationdata %>%
-  mutate(country = str_extract_all(tolower(locationdata$location), pattern)) %>%
+  mutate(country = str_extract_all(tolower(locationdata$locations), pattern)) %>%
   # select(-location) %>%
   unnest(country, keep_empty = TRUE)
+```
 
+```{r}
+locationtwo %>%
+  filter(str_detect(country, 'nevis'))
 ```
 
 Alright so there is something wrong with string detect as it doesn't like replacing korea. I will sort this later.
@@ -410,8 +425,24 @@ Now to get only the first author's location.
 falocationdata <-
 locationtwo %>% 
   group_by(key) %>% 
-  filter(row_number()==1)
+  filter(row_number()==1) %>%
+  mutate(country = str_to_title(country))
+
 ```
+
+After manual inspection of the entire dataset, some codes were not correct to the first author affiliated country. Here is a manual correction of the affected country codes.
+```{r}
+falocationdata$country[falocationdata$key =="rayyan-825284849"] <- "United States"
+falocationdata$country[falocationdata$key =="rayyan-825284950"] <- "Saint Kitts and Nevis"
+falocationdata$country[falocationdata$key =="rayyan-825285156"] <- "Germany"
+falocationdata$country[falocationdata$key =="rayyan-825285209"] <- "Italy"
+falocationdata$country[falocationdata$key =="rayyan-875292441"] <- "United States"
+falocationdata$country[falocationdata$key =="rayyan-875295819"] <- "Italy"
+falocationdata$country[falocationdata$key =="rayyan-875297343"] <- "Germany"
+falocationdata$country[falocationdata$key =="rayyan-875297370"] <- "Austria"
+
+```
+
   
   
   Finally And let's look at it from another view. We see that the country names are terrible and not grouped correctly. England should group into UK.
@@ -431,17 +462,105 @@ ggplot(falocationdata, aes(country)) +
   theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
 
+Let's manually check if if first author information is correct from a subset...
+```{r}
+falocationdata %>%
+  filter(str_detect(country, 'united kingdom'))
+
+```
+
 Now to look at country and journal publication both. So look at breakdown of publication within country.
+I selected all of the entries labelled as Italy in the country and looked at the original location column. All the first author locatinos are correct. And Italy was even selected when the second authors were from a different country, suggesting it correctly selected the first author location. 
+
+Then I did the same with UK, which is really important because it required some data cleaning and the numbers kept changing as I cleaned too.
+There was 1 error. All the others were accurate even when second author was from another country. 
+One of the data should have included Saint Kitts and Nevis, which did show up in an earlier uncorrected version. I'll see if I can fix this. 
+Ross University School of veterinary Medicine, Basseterre, St. Kitts, Saint Kitts and Nevis
 ```{r}
 agglocation <- falocationdata %>% group_by(country, journal) %>%
   count(journal, sort=TRUE)
   
 ```
 
+It's good to tale a look at this but there are too many journals for good information to come of it.
 ```{r}
 ggplot(agglocation, aes(fill=journal, y=n, x=country)) + 
     geom_bar(position="stack", stat="identity") +
     theme_classic() + 
     theme(legend.position="bottom", axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+Now let's put this on a map!
+We want count by country connected to countries with  coordinates then put over an image of a map with coordinates so we can make a visual.
+This code is based off the guide by Dr Paul Christiansen available at https://youtu.be/AgWgPSZ7Gp0
+
+```{r}
+# Count of articles by country
+aggcountry <- falocationdata %>% group_by(country) %>%
+  count(country, sort=TRUE)
+
+# country coordinates
+mapdata <- map_data("world")
+
+# Clean the dataset
+mapdata$region[mapdata$region =="Saint Kitts" | mapdata$region =="Nevis"] <- "Saint Kitts and Nevis"
+mapdata$region[mapdata$region =="USA"] <- "United States"
+mapdata$region[mapdata$region =="UK"] <- "United Kingdom"
+### TODO: if stuff gives a problem check the format of the country names
+
+# Join the datasets
+mapdata <- left_join(mapdata, aggcountry, by= c("region" = "country"))
+
+# filter for only countries with entries
+mapdatayes <- mapdata %>% filter(!is.na(mapdata$n))
+mapdatayes
+
+```
+```{r}
+# Check the dataset
+mapdata %>%
+  filter(str_detect(region, 'United Kingdom'))
+```
+
+```{r}
+# globemap1 <- ggplot(mapdata, aes(x=long, y=lat, group=group)) +
+#   geom_polygon(aes=(fill=mapdata$n)) # this is wrong
+
+globemap2 <- ggplot() + 
+  geom_polygon(data=mapdata, aes(fill=n, x=long, y=lat, group=group)) +
+  scale_fill_gradient(name="Count of articles", low="aquamarine3", high="turquoise4", na.value="snow3") +
+  theme_void() +
+  coord_map()
+globemap2
+  
+```
+
+Other options here:
+https://www.happykhan.com/posts/map-projections-in-r/
+https://bookdown.org/content/b298e479-b1ab-49fa-b83d-a57c2b034d49/map.html#basic-map
+
+```{r}
+globemap2 <- ggplot() + 
+  geom_polygon(data=mapdata, aes(fill=n, x=long, y=lat, group=group)) +
+  scale_fill_viridis(name="Number of articles", option="G", na.value="snow") +
+  labs(
+    title = "TITLE",
+    subtitle = "SUBTITLE",
+    caption = "CAPTION"
+  ) +
+  theme(
+    text = element_text(color = "#22211d"),
+    plot.background = element_rect(fill = "snow3", color = NA),
+    panel.background = element_rect(fill = "snow3", color = NA),
+    legend.background = element_rect(fill = "snow3", color = NA),
+
+    plot.title = element_text(size= 22, hjust=0.01, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+    plot.subtitle = element_text(size= 17, hjust=0.01, color = "#4e4d47", margin = margin(b = -0.1, t = 0.43, l = 2, unit = "cm")),
+    plot.caption = element_text( size=12, color = "#4e4d47", margin = margin(b = 0.3, r=-99, unit = "cm") ),
+
+    legend.position = c(0.7, 0.09)
+  ) +
+  coord_map()
+globemap2
 ```
 
