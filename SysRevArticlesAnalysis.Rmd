@@ -20,7 +20,6 @@ From the published methods section:
 Descriptive statistics of articles screened at the title and abstract level was used to identify gross trends in the literature and to explore methodology. Descriptive statistics included:
 X publication trend of number of papers by date and by journal, 
 X number of papers by first author location, if listed. 
-! TODO: update country output as the shorthand is confusing
 
 Text mining was used to pull relevant words from abstracts to explore:
 - frequency of word, 
@@ -42,7 +41,7 @@ Cmd + Option + I for a new chunk.
 
 ## Load Packages
 ```{r}
-install.packages("countrycode")
+install.packages('tidytext')
 ```
 
 ```{r}
@@ -53,9 +52,23 @@ library(ggplot2)
 library(ggridges) # for ridgeplot
 library(viridis)
 library(countrycode)
+library(maps)
+library(extrafont)
+library(stringr)        # text cleaning and regular expressions
+library(tidytext)       # provides additional text mining functions
 ```
 
-##Load file
+###Plotting theme setting for consistency
+
+```{r}
+theme_set(theme_bw(base_size=12, base_family='sans')+
+             theme(panel.grid.major = element_blank(), 
+                   panel.grid.minor = element_blank()))
+```
+
+
+## Data Cleaning
+### Load file
 
 ```{r}
 rawdata <- read_csv("RayyanExport06022023/articles.csv")
@@ -193,6 +206,8 @@ tidierincluded <- completedata %>% select(-c(keywords.x, keywords.y, location.x,
 summary(tidierincluded)
 ```
 
+## Publication by Year
+
 Let's look at the year data.
 ```{r echo=FALSE}
 ggplot(tidierincluded, aes(year)) + 
@@ -323,6 +338,8 @@ ggplot(tidier2, aes(x = year, y = journal, fill=journal)) +
   )
 ```
 
+
+# Publication by Country
 Now that we've got some idea of what we're looking at, let's look at publications by country and date. To do this we must parse out the countries from the strings. We'll use countrycode to do this.
 
 We need the code to read through the string, pull out complete countries and make them as a list, then to select the first country to correspond to the first author. 
@@ -354,10 +371,8 @@ df %>%
   unnest(country, keep_empty = TRUE)
 
 ```
+Pull the country name from a list of countries, then alter the location data by removing punctuation and trying to correct some name variations that aren't being identified or are otherwise being problematic.
 ```{r}
-
-#make sure this is running
-library(tidyverse)
 
 #add a function
 all_country <- countrycode::countryname_dict %>%  # remember the :: specifies the function specific to that package
@@ -385,42 +400,16 @@ locationdata$locations %<>%
   gsub("Saint Kitts and Nevis", "Saint Kitts and Nevis", .) %>%
   gsub("Berlin", "Germany", .)
 
-# some rows were not recognised and so were replaced. Still some weren't recognised and so are manually changed here.
-#locationdata <- locationdata %>%
-#  mutate(locations = case_when(
-#    str_detect(locations, "Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205") ~ " Department of Psychiatry and Behavioral Sciences University of Arkansas for Medical Sciences 4301 West Markham Little Rock Arkansas 72205 United States",
-#      str_detect(locations, "Ross University School of veterinary Medicine Basseterre St Kitts Saint Kitts and Nevis     Adtalem Global Education Downers Grove Illinois United Kingdom     Center for Teaching and Learning Ross University School of Medicine Roseau Commonwealth of Dominica Dominica") ~ "Saint Kitts and Nevis St Kitts and Nevis KNA KN",
-#    str_detect(location, "College of Veterinary Medicine Seoul National University 1 Gwanakro Gwanakgu Seoul 151742 Korea") ~ "republic of korea",
-#    str_detect(location, "Animal Technology College of Applied Life Science Jeju National University 102 Jejudaehakro Jejusi 63243 Korea Republic") ~ # "republic of korea",
-#  str_detect(location, "Institute of Animal Medicine College of Veterinary Medicine Gyeongsang National University Republic of Korea
-#") ~ "republic of korea",
-#    TRUE ~ locations
-#    )
-#  )
-#
-#
-
-
 ```
-
+Now we make a new table that is expanded so that every country found in the string has its own row, such that two authors = two rows
 ```{r}
-# now we make a new table that is expanded so that every country found in the string has its own row, such that two authors = two rows
 locationtwo <- locationdata %>%
   mutate(country = str_extract_all(tolower(locationdata$locations), pattern)) %>%
   # select(-location) %>%
   unnest(country, keep_empty = TRUE)
 ```
 
-```{r}
-locationtwo %>%
-  filter(str_detect(country, 'nevis'))
-```
-
-Alright so there is something wrong with string detect as it doesn't like replacing korea. I will sort this later.
-Also I need to check that all the replacements are accurate to first author location. I'll manually compare the columns before and after the changes.
-
 Now to get only the first author's location.
-  
 ```{r}
 falocationdata <-
 locationtwo %>% 
@@ -430,7 +419,7 @@ locationtwo %>%
 
 ```
 
-After manual inspection of the entire dataset, some codes were not correct to the first author affiliated country. Here is a manual correction of the affected country codes.
+After manual inspection of the entire dataset, some codes were still not correct to the first author affiliated country. Here is a manual correction of the affected country codes.
 ```{r}
 falocationdata$country[falocationdata$key =="rayyan-825284849"] <- "United States"
 falocationdata$country[falocationdata$key =="rayyan-825284950"] <- "Saint Kitts and Nevis"
@@ -445,8 +434,7 @@ falocationdata$country[falocationdata$key =="rayyan-875297370"] <- "Austria"
 
   
   
-  Finally And let's look at it from another view. We see that the country names are terrible and not grouped correctly. England should group into UK.
-  
+  Finally we can plot the number or aricles by country.
 ```{r}
 ggplot(falocationdata, aes(country)) + 
   geom_bar(color = "darkslategray", fill = "thistle4") +
@@ -506,61 +494,47 @@ mapdata <- map_data("world")
 mapdata$region[mapdata$region =="Saint Kitts" | mapdata$region =="Nevis"] <- "Saint Kitts and Nevis"
 mapdata$region[mapdata$region =="USA"] <- "United States"
 mapdata$region[mapdata$region =="UK"] <- "United Kingdom"
-### TODO: if stuff gives a problem check the format of the country names
 
 # Join the datasets
 mapdata <- left_join(mapdata, aggcountry, by= c("region" = "country"))
 
-# filter for only countries with entries
-mapdatayes <- mapdata %>% filter(!is.na(mapdata$n))
-mapdatayes
-
 ```
+Mapping points over the globe.
 ```{r}
-# Check the dataset
-mapdata %>%
-  filter(str_detect(region, 'United Kingdom'))
-```
-
-```{r}
-# globemap1 <- ggplot(mapdata, aes(x=long, y=lat, group=group)) +
-#   geom_polygon(aes=(fill=mapdata$n)) # this is wrong
 
 globemap2 <- ggplot() + 
   geom_polygon(data=mapdata, aes(fill=n, x=long, y=lat, group=group)) +
-  scale_fill_gradient(name="Count of articles", low="aquamarine3", high="turquoise4", na.value="snow3") +
+  scale_fill_gradient(name="Count of articles", low="aquamarine3", high="midnightblue", na.value="snow3") +
+  labs(
+    title = "Map of Included Articles by Country",
+    subtitle = "Count of articles published by country of first author or corresponding author.",
+    caption = "Grey indicates no publications while darker blue shades indicate a higher published count. Publishing country is determined by the first author listed country or corresponding address; whichever was pulled from the database data."
+  ) +
   theme_void() +
-  coord_map()
+  coord_fixed(1.2)
 globemap2
   
 ```
-
-Other options here:
+Tutorials for maps are here:
 https://www.happykhan.com/posts/map-projections-in-r/
 https://bookdown.org/content/b298e479-b1ab-49fa-b83d-a57c2b034d49/map.html#basic-map
+https://bookdown.org/content/b298e479-b1ab-49fa-b83d-a57c2b034d49/map.html#plot-it-with-ggplot2
 
-```{r}
-globemap2 <- ggplot() + 
-  geom_polygon(data=mapdata, aes(fill=n, x=long, y=lat, group=group)) +
-  scale_fill_viridis(name="Number of articles", option="G", na.value="snow") +
-  labs(
-    title = "TITLE",
-    subtitle = "SUBTITLE",
-    caption = "CAPTION"
-  ) +
-  theme(
-    text = element_text(color = "#22211d"),
-    plot.background = element_rect(fill = "snow3", color = NA),
-    panel.background = element_rect(fill = "snow3", color = NA),
-    legend.background = element_rect(fill = "snow3", color = NA),
 
-    plot.title = element_text(size= 22, hjust=0.01, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
-    plot.subtitle = element_text(size= 17, hjust=0.01, color = "#4e4d47", margin = margin(b = -0.1, t = 0.43, l = 2, unit = "cm")),
-    plot.caption = element_text( size=12, color = "#4e4d47", margin = margin(b = 0.3, r=-99, unit = "cm") ),
+#Text Mining and Word Relationships
+As a reminder: 
+Text mining was used to pull relevant words from abstracts to explore:
+- frequency of word, 
+- word frequency by year, 
+- with correlation tests 
+Sentiment analysis was used to 
+- separate words into sentiments, such as words preceded by 'not' belonging to negative sentiments, and 
+- word count by sentiment. 
+Analysis included 
+- visualising a network of words used together and a correlation of words including 
+- a visualisation of correlations within word clusters. 
 
-    legend.position = c(0.7, 0.09)
-  ) +
-  coord_map()
-globemap2
-```
+Start here: https://afit-r.github.io/tidy_text
+End here: https://afit-r.github.io/word_relationships
+
 
