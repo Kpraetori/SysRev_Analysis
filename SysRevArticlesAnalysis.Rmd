@@ -22,13 +22,14 @@ X publication trend of number of papers by date and by journal,
 X number of papers by first author location, if listed. 
 
 Text mining was used to pull relevant words from abstracts to explore:
-- frequency of word, 
-- word frequency by year, 
+X frequency of word, 
+- word frequency by year 
 - with correlation tests 
 Sentiment analysis was used to 
 - separate words into sentiments, such as words preceded by 'not' belonging to negative sentiments, and 
 - word count by sentiment. 
-Analysis included 
+
+Analysis included: 
 - visualising a network of words used together and a correlation of words including 
 - a visualisation of correlations within word clusters. 
 
@@ -41,7 +42,7 @@ Cmd + Option + I for a new chunk.
 
 ## Load Packages
 ```{r}
-install.packages('tidytext')
+install.packages('SnowballC')
 ```
 
 ```{r}
@@ -54,8 +55,16 @@ library(viridis)
 library(countrycode)
 library(maps)
 library(extrafont)
+
 library(stringr)        # text cleaning and regular expressions
 library(tidytext)       # provides additional text mining functions
+library(widyr)
+library(SnowballC) # This is stemming in NLP
+
+library(igraph) # For network graphs
+library(ggraph)
+
+
 ```
 
 ###Plotting theme setting for consistency
@@ -211,10 +220,10 @@ summary(tidierincluded)
 Let's look at the year data.
 ```{r echo=FALSE}
 ggplot(tidierincluded, aes(year)) + 
-  geom_histogram(bins=20,color = "burlywood4", fill = "darkslategray") +
-  geom_vline(aes(xintercept = median(year)), color = "thistle4", size = 1) +
-  geom_vline(aes(xintercept = median(year) + sd(year)), color = "thistle3", size = 0.5) +
-  geom_vline(aes(xintercept = median(year) - sd(year)), color = "thistle3", size = 0.5) +
+  geom_histogram(bins=20, color = "midnightblue", fill = "aquamarine4") +
+  geom_vline(aes(xintercept = median(year)), color = "turquoise", size = 1) +
+  geom_vline(aes(xintercept = median(year) + sd(year)), color = "turquoise3", size = 0.5) +
+  geom_vline(aes(xintercept = median(year) - sd(year)), color = "turquoise3", size = 0.5) +
   scale_x_continuous(breaks=seq(1960,2022,5)) +
   labs(
     title = "Histogram of Article Publication by Year",
@@ -224,6 +233,8 @@ ggplot(tidierincluded, aes(year)) +
     y = "Count of articles published"
   ) +
   theme_classic()
+
+ggsave("PubbyYear.pdf", width = 8, height = 5)
 ```
 Now to look at the number of articles by journal.
 I tried a density ridgeline and it looks bad. Tried a binned one and it looks better but still bad. Too many journals!
@@ -285,6 +296,17 @@ mostpublished <- mostpublished %>%
 
 The top 5 out of 78 journals cover 148 (47.44%) articles, thus containing less than half the dataset. Only two journals contained more than 10% (>31 articles) of the data. The first dog-specific journal contained 7 (2.24%) articles and the first welfare-specific journal contained 5 (1.6%) of articles. All articles with >1% of the data were English / non-translated Journals.
 
+Print a list of the top ten Journals.
+```{r}
+top10pub <- mostpublished %>% 
+  rename("Count" = "n", "Journal" = "journal") %>% 
+  arrange(desc(Count)) %>% 
+  head(10)
+print(top10pub)
+write.csv(top10pub,"Top10Publishers.csv")
+```
+
+
 Let's view on a histogram. 
 ```{r echo=FALSE}
 ggplot(tidier2, aes(journal)) + 
@@ -308,17 +330,19 @@ I've made these and I'll get back to them once I clean my data
 
 ```{r}
 ggplot(tidier2, aes(x = year, y = journal, fill=journal)) +
-  geom_density_ridges(stat="binline", bins=25, scale=0.8) +
+  geom_density_ridges(stat="binline", bins=25, scale=.7) +
   theme_ridges()+ 
   theme(legend.position = "none", axis.text.y = element_text(size = 8)) +
   scale_x_continuous(limits=c(1965, 2025), breaks=seq(1965,2025,5)) +
   labs(
-    title = "Ridgeline histogram plot of Journal Publication over Time",
+    title = "Ridgeline Histogram of Journal Publication over Time",
     subtitle = "From ND to May 2022",
     caption = "Data of articles included after title and abstract screening. Plots are colored by journal.",
     x = "Year of Publication",
     y = "Title of Journal"
   )
+
+ggsave("RidgelinePublish.pdf", width = 12, height = 10)
 ```
 
 From the histograms, it looks like there's a boom around 2000. Let's focus on these years.
@@ -328,14 +352,15 @@ ggplot(tidier2, aes(x = year, y = journal, fill=journal)) +
   geom_density_ridges(stat="binline", bins=25, scale=0.8) +
   theme_ridges()+ 
   theme(legend.position = "none", axis.text.y = element_text(size = 8)) +
-  scale_x_continuous(limits=c(2000, 2025), breaks=seq(2000,2025,5)) +
+  scale_x_continuous(limits=c(2002, 2022), breaks=seq(2002,2022,5)) +
   labs(
-    title = "Ridgeline histogram plot of Journal Publication over Time",
-    subtitle = "From 2000 to May 2022",
-    caption = "Data of articles included after title and abstract screening and coloured by journal. 17 journals contained publications prior to 2000 and not shown in this visualisation. Journals with no line only published articles prior to 2000.",
+    title = "Ridgeline Histogram of Journal Publication over Time",
+    subtitle = "From 2002 to May 2022",
+    caption = "Data of articles included after title and abstract screening and coloured by journal. 23 journals contained publications prior to 2002 not shown in this visualisation. Journals with no line only published articles prior to 2002.",
     x = "Year of Publication",
     y = "Title of Journal"
   )
+ggsave("RidgelinePublish2022.pdf", width = 12, height = 10)
 ```
 
 
@@ -436,8 +461,9 @@ falocationdata$country[falocationdata$key =="rayyan-875297370"] <- "Austria"
   
   Finally we can plot the number or aricles by country.
 ```{r}
+
 ggplot(falocationdata, aes(country)) + 
-  geom_bar(color = "darkslategray", fill = "thistle4") +
+  geom_bar(color = "midnightblue", fill = "aquamarine4") +
   geom_text(stat='count', aes(label=..count..), vjust=-1) +
   labs(
     title = "Barplot of Article Publication by First Author Country",
@@ -447,8 +473,12 @@ ggplot(falocationdata, aes(country)) +
     y = "Count of articles published"
   ) +
   theme_classic() + 
-  theme(axis.text.x = element_text(angle = 45, hjust=1))
+  theme(axis.text.x = element_text(angle = 45, hjust=1), plot.margin = margin(2,1,1,1, "cm"))
+
+ggsave("PublicationbyCountry.pdf", width = 21, height = 20, units = "cm")
 ```
+The top 5 countries produced 58% (n=181) of all included data.
+
 
 Let's manually check if if first author information is correct from a subset...
 ```{r}
@@ -504,17 +534,44 @@ Mapping points over the globe.
 
 globemap2 <- ggplot() + 
   geom_polygon(data=mapdata, aes(fill=n, x=long, y=lat, group=group)) +
-  scale_fill_gradient(name="Count of articles", low="aquamarine3", high="midnightblue", na.value="snow3") +
+  scale_fill_gradient(name="Count of articles", low="aquamarine3", high="midnightblue", na.value="snow4") +
   labs(
     title = "Map of Included Articles by Country",
     subtitle = "Count of articles published by country of first author or corresponding author.",
-    caption = "Grey indicates no publications while darker blue shades indicate a higher published count. Publishing country is determined by the first author listed country or corresponding address; whichever was pulled from the database data."
+    # caption = "Grey indicates no publications while darker blue shades indicate a higher published count. Publishing country is determined by the first author listed country or corresponding address; whichever was pulled from the database data."
   ) +
   theme_void() +
-  coord_fixed(1.2)
+  coord_fixed(1.2) +
+  theme(plot.title = element_text(size = 12, face = "bold"),
+    legend.title=element_text(size=10), 
+    legend.text=element_text(size=9))
 globemap2
   
+ggsave("PublicationMap.jpeg", width = 8, height = 4)
 ```
+Try on with a grouped scale
+```{r}
+
+globemap2 <- ggplot() + 
+  geom_polygon(data=mapdata, aes(fill=as.factor(n), x=long, y=lat, group=group)) +
+  # geom_polygon(aes(fill = oil_bbl_per_day, color = as.factor(opec_ind))) +
+#  scale_fill_gradient(name="Count of articles", low="aquamarine3", high="midnightblue", na.value="snow4") +
+#  scale_fill_gradientn(colours = c('#461863','#404E88','#2A8A8C','#7FD157','#F9E53F'),values = scales::rescale(c(0,5,10,15,25, 30)) ,breaks = c(0,5,10,15,25, 30)) +
+  labs(
+    title = "Map of Included Articles by Country",
+    subtitle = "Count of articles published by country of first author or corresponding author.",
+    # caption = "Grey indicates no publications while darker blue shades indicate a higher published count. Publishing country is determined by the first author listed country or corresponding address; whichever was pulled from the database data."
+  ) +
+  theme_void() +
+  coord_fixed(1.2) +
+  theme(plot.title = element_text(size = 12, face = "bold"),
+    legend.title=element_text(size=10), 
+    legend.text=element_text(size=9))
+globemap2
+  
+ggsave("PublicationMap.jpeg", width = 8, height = 4)
+```
+
 Tutorials for maps are here:
 https://www.happykhan.com/posts/map-projections-in-r/
 https://bookdown.org/content/b298e479-b1ab-49fa-b83d-a57c2b034d49/map.html#basic-map
@@ -524,8 +581,8 @@ https://bookdown.org/content/b298e479-b1ab-49fa-b83d-a57c2b034d49/map.html#plot-
 #Text Mining and Word Relationships
 As a reminder: 
 Text mining was used to pull relevant words from abstracts to explore:
-- frequency of word, 
-- word frequency by year, 
+- frequency of word
+- word frequency by year
 - with correlation tests 
 Sentiment analysis was used to 
 - separate words into sentiments, such as words preceded by 'not' belonging to negative sentiments, and 
@@ -537,4 +594,159 @@ Analysis included
 Start here: https://afit-r.github.io/tidy_text
 End here: https://afit-r.github.io/word_relationships
 
+turn the dataframe to tibble
+
+As we will see below, there is a problem with combining words. Even when stemming words, the UK vs  US spelling of behaviour becomes a problem, as the stems are still different. So I am also going to replace the incidence of behav with behavior. It won't really make sense in all contexts, but since we're going to stem the words anyways this is needed now.
+
+```{r}
+abstracts <- tidier2 %>% select(key, title, abstract, keywords)
+
+
+abstracts$abstract <- gsub("behav[^ ]*","behavior",abstracts$abstract, ignore.case=TRUE)
+```
+
+
+
+```{r}
+abstracts_words <- abstracts %>% 
+  unnest_tokens(output=word, input=abstract) %>%  # each word in its own row
+  anti_join(stop_words, by='word') %>%  # anti join gets rid of any match of things to the stop words list
+  filter(str_detect(word, "[:alpha:]")) %>%  # makes sure words are used (alpha for alphabetical)
+  distinct() # if same article lists word many times, only counts as one
+```
+
+Word counts by unique articles. So how many articles use X word. I did filter out words that were only used once.
+
+At some point I need to combine all behaviour words together.
+I tried having the top articles be the top 50% and only 5 words showed up: dog, dogs, human, study, results.
+If I look at a plot of unique words, what is the distribution?
+
+
+
+
+### Here is code for looking at words without reducing words to their stem meanings. 
+```{r}
+articles_mention_words <- abstracts_words %>% 
+  count(word, name='ArticleCount') %>% # how many articles mention X word
+  filter(ArticleCount > 1) # words mentioned more than once %>% 
+# so 31 is ten percent of the papers
+
+write.csv(articles_mention_words,"ArticleMentionWords_MoreThanOnce.csv")
+
+toparticles_mention_words <- abstracts_words %>% 
+  count(word, name='ArticleCount') %>% # how many articles mention X word
+  filter(ArticleCount > 78) # words mentioned more than 10 percent of papers Change filter to 31 for top 90 percent, 78 for 75, 156 for 50
+
+ggplot(articles_mention_words, aes(ArticleCount)) + 
+  geom_histogram(bins=60,color = "aquamarine3", fill = "midnightblue") +
+  labs(
+    title = "Unique Words Among Articles",
+    subtitle = "How similar are words used across articles?",
+    # caption = "Caption if needed",
+    x = "Number of Articles that Use the Same Word",
+    y = "Count of Unique Words"
+  )
+ggsave("UniqueWordCount.jpeg", width = 6, height = 4)
+```
+
+### New Step: Standardise Words 
+Some words are the same but different tense, plural, etc. So I will need to standardise the words to compare them effectively.
+
+1. Using the list of words, find common words like behaviour, behaviours, behavior, behavioural, etc.
+Then do a find an replace at the abstract level to group words that mean the same thing.
+2. document in overleaf
+
+After looking through the list, a lot of words have alternatives that can be used. So to reduce the labor and decrease subjectivity, we are using stemming software to get to the stem of words and then do the frequency analysis.
+
+```{r}
+abstracts_stems <- abstracts_words %>%
+  mutate(stem = wordStem(word))
+
+toparticles_wordstems <- abstracts_stems %>% 
+  count(stem, name='ArticleCount') %>% # how many articles mention X word
+  filter(ArticleCount > 78) # words mentioned more than 10 percent of papers Change filter to 31 for top 90 percent, 78 for 75, 156 for 50
+
+ggplot(toparticles_wordstems, aes(ArticleCount)) + 
+  geom_histogram(bins=60,color = "aquamarine3", fill = "midnightblue") +
+  labs(
+    title = "Unique Stem Words Among Articles",
+    subtitle = "How similar are words used across articles?",
+    # caption = "Caption if needed",
+    x = "Number of Articles that Use the Same Word",
+    y = "Count of Unique Stem Words"
+  )
+ggsave("UniqueStemWordCount.jpeg", width = 6, height = 4)
+```
+
+### New angle: getting to stem words
+In NLP Stemming is a tool that cuts words down to their stems. This 
+
+
+### Unique words over time
+
+
+### Let's do a word correlation
+Spearman's because of the skew of the data.
+
+```{r}
+# pairwise correlation (pearson correlation is default) use  method="spearman" if doing spearman
+abs_word_relate <- toparticles_wordstems %>% 
+  semi_join(toparticles_wordstems, by='stem') %>% 
+  pairwise_cor(item=stem, feature = ArticleCount)
+```
+
+Let's try a circulr correlation jsut to see what we're dealing with here.
+```{r}
+
+graph_from_data_frame(d=abs_word_relate, 
+                      vertices = toparticles_wordstems %>% 
+                        semi_join(abs_word_relate, by= c("stem" = "item1"))) %>% # remove words not connected
+  ggraph(layout = 'linear', circular = TRUE) + 
+  geom_edge_arc(aes(color = factor(correlation))) +
+  scale_edge_width(range = c(0.2, 2)) + 
+  scale_color_manual(values=c("aquamarine3","midnightblue")) +
+  geom_node_label(aes(label=name), 
+              color = "midnightblue",          # text
+              fill = "aquamarine3",         # label background
+              size = 3,                 # font size
+              label.r = unit(2, "pt"), # corner radius of label box
+              label.size = .1,          # label border size
+              label.padding = unit(.2, "lines")) +
+#  geom_node_text(aes(label=name), size = 2) +
+  theme_graph()
+```
+
+```{r}
+
+col <- c("aquamarine", "aquamarine3", "turquoise4", "darkblue", "midnightblue")
+
+graph_from_data_frame(d=abs_word_relate, 
+                      vertices = toparticles_wordstems %>% 
+                        semi_join(abs_word_relate, by= c("stem" = "item1"))) %>% # remove words not connected
+  ggraph(layout="graphopt") +
+  geom_edge_link(aes(alpha = correlation), color = "midnightblue") +
+  scale_edge_width(range = c(0.2, 2)) + 
+  geom_node_label(aes(label=name), repel=T,
+                color = "midnightblue",          # text
+                fill = "aquamarine3",         # label background
+                size = 2,                 # font size
+                label.r = unit(2, "pt"), # corner radius of label box
+                label.size = .1,          # label border size
+                label.padding = unit(.2, "lines")) +
+  #geom_node_text(aes(label=name), size = 4, color="black", repel=T) +
+  labs(
+  title = "Correlation between Words",
+  subtitle = "Relationship of top 75% most used words",
+  ) +
+  theme_graph()
+
+ggsave("CorrelationWords.jpeg", width = 8, height = 6)
+```
+
+
+And see what the top three most used methods are. Most used is not frequency overall but articles that have included the word.
+This is very broad and shallow - word might be used in reference but not an actual method used. (will need to check that)
+We will use the articles pulled and see which ones refer to a term but don't use it and can lightly extrapolate from that
+Do sentiment analysis
+plot sentiments
 
