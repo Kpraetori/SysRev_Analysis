@@ -24,7 +24,7 @@ X number of papers by first author location, if listed.
 Text mining was used to pull relevant words from abstracts to explore:
 X frequency of word, 
 - word frequency by year 
-- with correlation tests 
+X with correlation tests 
 Sentiment analysis was used to 
 - separate words into sentiments, such as words preceded by 'not' belonging to negative sentiments, and 
 - word count by sentiment. 
@@ -650,13 +650,8 @@ ggsave("UniqueWordCount.jpeg", width = 6, height = 4)
 ```
 
 ### New Step: Standardise Words 
-Some words are the same but different tense, plural, etc. So I will need to standardise the words to compare them effectively.
+Some words are the same but different tense, plural, etc. So I will need to standardise the words to compare them effectively. We'll use Snowball stemming as it has grown from contributions and so has a large vocabulary.
 
-1. Using the list of words, find common words like behaviour, behaviours, behavior, behavioural, etc.
-Then do a find an replace at the abstract level to group words that mean the same thing.
-2. document in overleaf
-
-After looking through the list, a lot of words have alternatives that can be used. So to reduce the labor and decrease subjectivity, we are using stemming software to get to the stem of words and then do the frequency analysis.
 
 ```{r}
 abstracts_stems <- abstracts_words %>%
@@ -678,10 +673,6 @@ ggplot(toparticles_wordstems, aes(ArticleCount)) +
 ggsave("UniqueStemWordCount.jpeg", width = 6, height = 4)
 ```
 
-### New angle: getting to stem words
-In NLP Stemming is a tool that cuts words down to their stems. This 
-
-
 ### Unique words over time
 
 
@@ -692,7 +683,7 @@ Spearman's because of the skew of the data.
 # pairwise correlation (pearson correlation is default) use  method="spearman" if doing spearman
 abs_word_relate <- toparticles_wordstems %>% 
   semi_join(toparticles_wordstems, by='stem') %>% 
-  pairwise_cor(item=stem, feature = ArticleCount)
+  pairwise_cor(item=stem, feature = ArticleCount, method="spearman")
 ```
 
 Let's try a circulr correlation jsut to see what we're dealing with here.
@@ -701,8 +692,10 @@ Let's try a circulr correlation jsut to see what we're dealing with here.
 graph_from_data_frame(d=abs_word_relate, 
                       vertices = toparticles_wordstems %>% 
                         semi_join(abs_word_relate, by= c("stem" = "item1"))) %>% # remove words not connected
-  ggraph(layout = 'linear', circular = TRUE) + 
-  geom_edge_arc(aes(color = factor(correlation))) +
+  
+  
+  ggraph(layout = 'stress', circular = TRUE) + 
+  geom_edge_arc(aes(color = correlation)) +
   scale_edge_width(range = c(0.2, 2)) + 
   scale_color_manual(values=c("aquamarine3","midnightblue")) +
   geom_node_label(aes(label=name), 
@@ -723,8 +716,13 @@ col <- c("aquamarine", "aquamarine3", "turquoise4", "darkblue", "midnightblue")
 graph_from_data_frame(d=abs_word_relate, 
                       vertices = toparticles_wordstems %>% 
                         semi_join(abs_word_relate, by= c("stem" = "item1"))) %>% # remove words not connected
-  ggraph(layout="graphopt") +
-  geom_edge_link(aes(alpha = correlation), color = "midnightblue") +
+  
+  
+  ggraph(layout="stress") +
+  # geom_edge_link(aes(alpha = correlation), colour= "turquoise3") +
+  geom_edge_link(aes(color = correlation)) +
+  scale_edge_colour_gradient(low = "grey", high = "darkblue") +
+  # geom_edge_link(aes(alpha = correlation), color = "midnightblue") +
   scale_edge_width(range = c(0.2, 2)) + 
   geom_node_label(aes(label=name), repel=T,
                 color = "midnightblue",          # text
@@ -740,13 +738,26 @@ graph_from_data_frame(d=abs_word_relate,
   ) +
   theme_graph()
 
-ggsave("CorrelationWords.jpeg", width = 8, height = 6)
+# ggsave("CorrelationWords.jpeg", width = 8, height = 6)
 ```
 
+```{r}
+graph_from_data_frame(d=abs_word_relate, 
+                      vertices = toparticles_wordstems %>% 
+                        semi_join(abs_word_relate, by= c("stem" = "item1"))) %>% # remove words not connected
+
+ggraph(layout = "drl") + 
+  geom_edge_link() + 
+  geom_node_point()
+```
 
 And see what the top three most used methods are. Most used is not frequency overall but articles that have included the word.
 This is very broad and shallow - word might be used in reference but not an actual method used. (will need to check that)
 We will use the articles pulled and see which ones refer to a term but don't use it and can lightly extrapolate from that
 Do sentiment analysis
 plot sentiments
+
+Top 3 Methods
+
+End result: behaviour tops the chart here.
 
