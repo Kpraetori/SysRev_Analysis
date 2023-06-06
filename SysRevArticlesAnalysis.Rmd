@@ -58,6 +58,7 @@ library(extrafont)
 
 library(stringr)        # text cleaning and regular expressions
 library(tidytext)       # provides additional text mining functions
+library(wordcloud)
 library(widyr)
 library(SnowballC) # This is stemming in NLP
 
@@ -65,6 +66,10 @@ library(igraph) # For network graphs
 library(ggraph)
 
 
+```
+```{r}
+# Citation code for write-up. Delete me later.
+citation("SnowballC")
 ```
 
 ###Plotting theme setting for consistency
@@ -236,6 +241,18 @@ ggplot(tidierincluded, aes(year)) +
 
 ggsave("PubbyYear.pdf", width = 8, height = 5)
 ```
+```{r}
+print("The median article year is:")
+median(tidierincluded$year)
+print("And standard deviation of article year is:")
+sd(tidierincluded$year)
+
+print("The earliest article year is:")
+min(tidierincluded$year)
+print("The most recent article year is:")
+max (tidierincluded$year)
+```
+
 Now to look at the number of articles by journal.
 I tried a density ridgeline and it looks bad. Tried a binned one and it looks better but still bad. Too many journals!
 
@@ -673,18 +690,44 @@ ggplot(toparticles_wordstems, aes(ArticleCount)) +
 ggsave("UniqueStemWordCount.jpeg", width = 6, height = 4)
 ```
 
-### Unique words over time
+### Wordcloud
 
+```{r}
+install.packages("wordcloud")
+library(wordcloud)
+
+
+```
+
+```{r}
+stemcloud <- abstracts_stems %>% 
+  count(stem, name='freq', sort=TRUE) # how many articles mention X word
+  
+wordcloud(words = stemcloud$stem, freq = stemcloud$freq, min.freq = 5, max.words=100, random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"))
+```
+
+
+
+### Unique words over time
+I didn't save year with this information!
 
 ### Let's do a word correlation
 Spearman's because of the skew of the data.
 
+Wait, I did this analysis on the article count not the article name? How am I seeing which words correlate?
+
 ```{r}
 # pairwise correlation (pearson correlation is default) use  method="spearman" if doing spearman
+
 abs_word_relate <- toparticles_wordstems %>% 
   semi_join(toparticles_wordstems, by='stem') %>% 
   pairwise_cor(item=stem, feature = ArticleCount, method="spearman")
 ```
+
+
+
+
+#### Visualisation of Correlations
 
 Let's try a circulr correlation jsut to see what we're dealing with here.
 ```{r}
@@ -708,6 +751,8 @@ graph_from_data_frame(d=abs_word_relate,
 #  geom_node_text(aes(label=name), size = 2) +
   theme_graph()
 ```
+1. Difference colours or transparencies so we can see the relationships
+2. or only display higer correlations
 
 ```{r}
 
@@ -739,6 +784,9 @@ graph_from_data_frame(d=abs_word_relate,
   theme_graph()
 
 # ggsave("CorrelationWords.jpeg", width = 8, height = 6)
+
+# Get a table of correlations to say specifically which were the strongest.
+
 ```
 
 ```{r}
