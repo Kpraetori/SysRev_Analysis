@@ -42,7 +42,8 @@ Cmd + Option + I for a new chunk.
 
 ## Load Packages
 ```{r}
-install.packages('SnowballC')
+# install.packages('SnowballC')
+install.packages("widyr")
 ```
 
 ```{r}
@@ -613,33 +614,106 @@ End here: https://afit-r.github.io/word_relationships
 
 turn the dataframe to tibble
 
-As we will see below, there is a problem with combining words. Even when stemming words, the UK vs  US spelling of behaviour becomes a problem, as the stems are still different. So I am also going to replace the incidence of behav with behavior. It won't really make sense in all contexts, but since we're going to stem the words anyways this is needed now.
+As we will see below, there is a problem with combining words. Even when stemming words, the UK vs  US spelling of behaviour becomes a problem, as the stems are still different. So I am also going to replace the incidence of behav with behaviour. It won't really make sense in all contexts, but since we're going to stem the words anyways this is needed now.
+
+First make a document with the content we want to look at and make behaviour a word.
 
 ```{r}
-abstracts <- tidier2 %>% select(key, title, abstract, keywords)
+abstracts <- tidier2 %>% select(key, title, abstract, year)
 
 
-abstracts$abstract <- gsub("behav[^ ]*","behavior",abstracts$abstract, ignore.case=TRUE)
+abstracts$abstract <- gsub("behav[^ ]*","behaviour",abstracts$abstract, ignore.case=TRUE)
 ```
 
 
+#################### TEST ARENA. #################
+```{r}
+tidy_words <- abstracts %>% 
+  unnest_tokens(output=word, input=abstract) %>%  # each word in its own row
+  anti_join(stop_words, by='word') %>%  # anti join gets rid of any match of things to the stop words list
+  filter(str_detect(word, "[:alpha:]"))  # makes sure words are used (alpha for alphabetical)
+  
+tidy_stems <- tidy_words %>%
+  mutate(stem = wordStem(word, language = "en")) # mutate the data to replace the word with the stem of the word
 
+# write_csv(tidy_stems, path = "RayyanExport06022023/tidy_stem_words.csv")
+```
+
+Let's look at word frequency, being careful to count the number of articles that contain a word, rather than number of times the word shows up.
+```{r}
+tidy_stems %>%
+        distinct() %>% # we want the word to count once per article
+        count(stem, sort = TRUE) %>%
+        top_n(10) # just show top 10
+```
+
+Now lets look at word frequency by year
+
+```{r}
+tidy_stems %>%
+    group_by(year) %>%
+    # distinct() %>% # we want the word to count once per article
+    # filter(year == 2021) %>%
+    filter(between(year, 2011, 2021)) %>% 
+    count(stem, sort = TRUE) %>%
+    select(stem, n) %>%
+    # head(.,10) %>%
+    top_n(9) %>%
+    # ungroup() %>%
+    ggplot(aes(x = reorder(stem, year), y = n, fill=year)) +
+    facet_wrap(~ year, ncol = 2, scales = "free") +
+    geom_col() +
+    labs(title="Words ",
+         x = NULL,
+         y = "Frequency") +
+    coord_flip()
+```
+
+Doing a pairwise count for words that are grouped together (occur in the same article).
+```{r}
+
+word_cooccurences <- pairwise_count(tidy_stems, stem, key, sort = TRUE)
+
+```
+
+Filter for words that occur together at least 100 times.
+```{r}
+word_cooccurences %>%
+        filter(n >= 90) %>%
+        graph_from_data_frame() %>%
+        ggraph(layout = "stress", circular = TRUE) +
+        geom_edge_link(aes(edge_alpha = n, edge_width = n), color="aquamarine3") +
+        geom_node_point(color = "midnightblue", size = 5) +
+        geom_node_text(aes(label = name), vjust = 1.8) +
+        theme_void()
+```
+```{r}
+tidy_stems %>%
+  group_by(stem) %>%
+  filter(n() >= 20) %>%
+  pairwise_cor(stem, key) %>%
+  filter(!is.na(correlation),
+         correlation > .5) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "aquamarine3", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+
+
+################### END TEST ARENA ###############
+
+
+Word counts by unique articles. So how many articles use X word. I did filter out words that were only used once.
 ```{r}
 abstracts_words <- abstracts %>% 
   unnest_tokens(output=word, input=abstract) %>%  # each word in its own row
   anti_join(stop_words, by='word') %>%  # anti join gets rid of any match of things to the stop words list
   filter(str_detect(word, "[:alpha:]")) %>%  # makes sure words are used (alpha for alphabetical)
-  distinct() # if same article lists word many times, only counts as one
+  # distinct() # if same article lists word many times, only counts as one
 ```
-
-Word counts by unique articles. So how many articles use X word. I did filter out words that were only used once.
-
-At some point I need to combine all behaviour words together.
-I tried having the top articles be the top 50% and only 5 words showed up: dog, dogs, human, study, results.
-If I look at a plot of unique words, what is the distribution?
-
-
-
 
 ### Here is code for looking at words without reducing words to their stem meanings. 
 ```{r}
@@ -648,22 +722,11 @@ articles_mention_words <- abstracts_words %>%
   filter(ArticleCount > 1) # words mentioned more than once %>% 
 # so 31 is ten percent of the papers
 
-write.csv(articles_mention_words,"ArticleMentionWords_MoreThanOnce.csv")
+# write.csv(articles_mention_words,"ArticleMentionWords_MoreThanOnce.csv")
 
 toparticles_mention_words <- abstracts_words %>% 
   count(word, name='ArticleCount') %>% # how many articles mention X word
   filter(ArticleCount > 78) # words mentioned more than 10 percent of papers Change filter to 31 for top 90 percent, 78 for 75, 156 for 50
-
-ggplot(articles_mention_words, aes(ArticleCount)) + 
-  geom_histogram(bins=60,color = "aquamarine3", fill = "midnightblue") +
-  labs(
-    title = "Unique Words Among Articles",
-    subtitle = "How similar are words used across articles?",
-    # caption = "Caption if needed",
-    x = "Number of Articles that Use the Same Word",
-    y = "Count of Unique Words"
-  )
-ggsave("UniqueWordCount.jpeg", width = 6, height = 4)
 ```
 
 ### New Step: Standardise Words 
@@ -693,13 +756,6 @@ ggsave("UniqueStemWordCount.jpeg", width = 6, height = 4)
 ### Wordcloud
 
 ```{r}
-install.packages("wordcloud")
-library(wordcloud)
-
-
-```
-
-```{r}
 stemcloud <- abstracts_stems %>% 
   count(stem, name='freq', sort=TRUE) # how many articles mention X word
   
@@ -711,10 +767,13 @@ wordcloud(words = stemcloud$stem, freq = stemcloud$freq, min.freq = 5, max.words
 ### Unique words over time
 I didn't save year with this information!
 
+
+
 ### Let's do a word correlation
 Spearman's because of the skew of the data.
 
 Wait, I did this analysis on the article count not the article name? How am I seeing which words correlate?
+
 
 ```{r}
 # pairwise correlation (pearson correlation is default) use  method="spearman" if doing spearman
