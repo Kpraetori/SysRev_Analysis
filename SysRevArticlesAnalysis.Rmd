@@ -226,21 +226,22 @@ summary(tidierincluded)
 Let's look at the year data.
 ```{r echo=FALSE}
 ggplot(tidierincluded, aes(year)) + 
-  geom_histogram(bins=20, color = "midnightblue", fill = "aquamarine4") +
-  geom_vline(aes(xintercept = median(year)), color = "turquoise", size = 1) +
-  geom_vline(aes(xintercept = median(year) + sd(year)), color = "turquoise3", size = 0.5) +
-  geom_vline(aes(xintercept = median(year) - sd(year)), color = "turquoise3", size = 0.5) +
+  geom_histogram(bins=20, color = "turquoise4", fill = "aquamarine3") +
+  geom_vline(aes(xintercept = median(year)), color = "midnightblue", size = 1) +
+  geom_vline(aes(xintercept = median(year) + sd(year)), color = "midnightblue", size = 0.5) +
+  geom_vline(aes(xintercept = median(year) - sd(year)), color = "midnightblue", size = 0.5) +
   scale_x_continuous(breaks=seq(1960,2022,5)) +
   labs(
-    title = "Histogram of Article Publication by Year",
-    subtitle = "From ND to May 2022",
-    caption = "Data of articles included after title and abstract screening. Vertical lines depict the median and standard deviation.",
+    title = "Article Publication by Year",
+    subtitle = "From 1966 to May 2022",
+    # caption = "Articles included after title and abstract screening. Vertical lines depict the median and standard deviation.",
     x = "Year of article publication",
-    y = "Count of articles published"
+    y = "Count of articles published",
+    family="Kohinoor Devanagari"
   ) +
   theme_classic()
 
-ggsave("PubbyYear.pdf", width = 8, height = 5)
+ggsave("PubbyYear.png", width = 5, height = 4)
 ```
 ```{r}
 print("The median article year is:")
@@ -552,20 +553,20 @@ Mapping points over the globe.
 
 globemap2 <- ggplot() + 
   geom_polygon(data=mapdata, aes(fill=n, x=long, y=lat, group=group)) +
-  scale_fill_gradient(name="Count of articles", low="aquamarine3", high="midnightblue", na.value="snow4") +
+  scale_fill_gradient(name="Count", low="aquamarine3", high="midnightblue", na.value="snow4") +
   labs(
     title = "Map of Included Articles by Country",
-    subtitle = "Count of articles published by country of first author or corresponding author.",
+    subtitle = "Article count by country of first author or corresponding author.",
     # caption = "Grey indicates no publications while darker blue shades indicate a higher published count. Publishing country is determined by the first author listed country or corresponding address; whichever was pulled from the database data."
   ) +
   theme_void() +
   coord_fixed(1.2) +
-  theme(plot.title = element_text(size = 12, face = "bold"),
-    legend.title=element_text(size=10), 
-    legend.text=element_text(size=9))
+  theme(plot.title = element_text(size = 12, face = "bold", family="Kohinoor Devanagari"),
+    legend.title=element_text(size=10, family="Kohinoor Devanagari"), 
+    legend.text=element_text(size=9, family="Kohinoor Devanagari"))
 globemap2
   
-ggsave("PublicationMap.jpeg", width = 8, height = 4)
+ggsave("PublicationMap.png", width = 7, height = 4)
 ```
 Try on with a grouped scale
 ```{r}
@@ -668,6 +669,30 @@ tidy_stems %>%
          y = "Frequency") +
     coord_flip()
 ```
+```{r}
+tidy_stems %>%
+  group_by(year) %>%
+  filter(between(year, 2017, 2021)) %>% #graphs are easier to read in 6 year intervals, change this part to reflect different years#
+  count(stem, sort = TRUE) %>%
+  select(stem, n) %>%
+  top_n(10, n) %>%
+  slice(1:10) %>%
+  ggplot(mapping = aes(x=reorder(stem, n), y = n, fill=year)) + #, fill=year
+  geom_col() +
+  #scale_fill_gradient2(low="aquamarine3", high="midnightblue") +
+  # geom_col(scale_fill_gradient2(low="aquamarine3", high="midnightblue")) +
+  facet_grid(~ year) +
+  labs(title="Top Words by Publication Year",
+       x = "Stem Word",
+       y = "Frequency") +
+  theme(text = element_text(size = 10, family="Kohinoor Devanagari"), legend.position="none") +
+  scale_fill_gradient(low="aquamarine3", high="midnightblue") +
+  coord_flip()
+
+# ggsave("WordCountYear.png", width = 7, height = 5)
+```
+
+
 
 Doing a pairwise count for words that are grouped together (occur in the same article).
 ```{r}
@@ -676,16 +701,21 @@ word_cooccurences <- pairwise_count(tidy_stems, stem, key, sort = TRUE)
 
 ```
 
-Filter for words that occur together at least 100 times.
+Filter for words that occur together at least 90 times.
 ```{r}
 word_cooccurences %>%
         filter(n >= 90) %>%
         graph_from_data_frame() %>%
         ggraph(layout = "stress", circular = TRUE) +
-        geom_edge_link(aes(edge_alpha = n, edge_width = n), color="aquamarine3") +
-        geom_node_point(color = "midnightblue", size = 5) +
-        geom_node_text(aes(label = name), vjust = 1.8) +
+        geom_edge_link(aes(edge_alpha = n, edge_width = n), color="snow4") +
+        geom_node_point(color = "aquamarine3", size = 5) +
+        geom_node_text(aes(label = name), vjust = 1.8,family="Kohinoor Devanagari") +
+      labs(title="Stem Word Relations by Article",
+         x = NULL,
+         y = "Frequency") +
         theme_void()
+
+ggsave("Network_article.png", width = 7, height = 5)
 ```
 ```{r}
 tidy_stems %>%
@@ -698,8 +728,10 @@ tidy_stems %>%
   ggraph(layout = "fr") +
   geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
   geom_node_point(color = "aquamarine3", size = 5) +
-  geom_node_text(aes(label = name), repel = TRUE) +
+  geom_node_text(aes(label = name), repel = TRUE, family="Kohinoor Devanagari") +
   theme_void()
+
+ggsave("Network_Words.png", width = 5.3, height = 3)
 ```
 
 
@@ -758,8 +790,11 @@ ggsave("UniqueStemWordCount.jpeg", width = 6, height = 4)
 ```{r}
 stemcloud <- abstracts_stems %>% 
   count(stem, name='freq', sort=TRUE) # how many articles mention X word
-  
-wordcloud(words = stemcloud$stem, freq = stemcloud$freq, min.freq = 5, max.words=100, random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"))
+
+png(filename = "plot3.png", width = 6, height = 4, units = "in", res = 300)
+wordcloud(words = stemcloud$stem, freq = stemcloud$freq, min.freq = 5, max.words=100, random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"), family="Kohinoor Devanagari")
+
+# ggplot2::ggsave("wordclouddog.png", width = 5, height = 5)
 ```
 
 
