@@ -23,7 +23,7 @@ X number of papers by first author location, if listed.
 
 Text mining was used to pull relevant words from abstracts to explore:
 X frequency of word, 
-- word frequency by year 
+X word frequency by year 
 X with correlation tests 
 Sentiment analysis was used to 
 - separate words into sentiments, such as words preceded by 'not' belonging to negative sentiments, and 
@@ -322,7 +322,13 @@ top10pub <- mostpublished %>%
   arrange(desc(Count)) %>% 
   head(10)
 print(top10pub)
-write.csv(top10pub,"Top10Publishers.csv")
+# write.csv(top10pub,"Top10Publishers.csv")
+
+print("The number of articles included in the top 10 is:")
+sum(top10pub$Count)
+print("The percent of articles included in the top 10 is:")
+round(sum(top10pub$Count)/312*100, 2)
+
 ```
 
 
@@ -784,6 +790,7 @@ ggplot(toparticles_wordstems, aes(ArticleCount)) +
   )
 ggsave("UniqueStemWordCount.jpeg", width = 6, height = 4)
 ```
+The presentation is wrong, there are only 312 articles...or are these not counted once per article?
 
 ### Wordcloud
 
@@ -801,7 +808,6 @@ wordcloud(words = stemcloud$stem, freq = stemcloud$freq, min.freq = 5, max.words
 
 ### Unique words over time
 I didn't save year with this information!
-
 
 
 ### Let's do a word correlation
